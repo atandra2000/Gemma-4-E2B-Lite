@@ -4,13 +4,16 @@ proportional/default RoPE, explicit scale 1.0, and cross-layer KV sharing
 
 Training uses no persistent cache: producer layers store their full-length K/V
 in the request-local `shared_kv_states` dict (autograd-connected, never
-detached) and same-type consumer layers alias them.
+detached) and same-type consumer layers alias them. Inference passes a
+`ProducerKVCache` instead: the canonical producer appends its chunk once and
+consumers alias the current-call states; masking uses absolute positions.
 """
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 
+from models.cache import ProducerKVCache
 from models.ple import RMSNorm
 
 
@@ -102,6 +105,7 @@ class Attention(nn.Module):
         position_ids: torch.Tensor,
         shared_kv_states: dict,
         attention_mask: torch.Tensor | None,
+        key_valid: torch.Tensor | None = None,
     ) -> torch.Tensor:
         batch, seq_len, _ = hidden_states.shape
         cos, sin = rope_cos_sin(self.inv_freq, position_ids)
@@ -111,18 +115,27 @@ class Attention(nn.Module):
         q = apply_rope(q, cos, sin).transpose(1, 2)  # [B, H, T, hd]
 
         if self.is_kv_shared_layer:
-            k, v = shared_kv_states[self.layer_type]  # producer's roped/normalized states
+            if isinstance(shared_kv_states, ProducerKVCache):
+                k, v = shared_kv_states.consumer_states(
+                    shared_kv_states.stream_for(self.layer_idx)
+                )
+            else:
+                k, v = shared_kv_states[self.layer_type]  # producer's roped/normalized states
         else:
             k = self.k_proj(hidden_states).view(batch, seq_len, 1, self.head_dim)
             k = apply_rope(self.k_norm(k), cos, sin).transpose(1, 2)
             v = self.v_norm(self.v_proj(hidden_states).view(batch, seq_len, 1, self.head_dim))
             v = v.transpose(1, 2)
-            if self.store_full_length_kv:
+            if isinstance(shared_kv_states, ProducerKVCache):
+                # every producer appends its own stream once per input token
+                k, v = shared_kv_states.producer_append(self.layer_idx, k, v, key_valid)
+            elif self.store_full_length_kv:
                 # autograd-connected storage: consumers must backprop through us
                 shared_kv_states[self.layer_type] = (k, v)
 
-        k = k.expand(batch, self.num_heads, seq_len, self.head_dim)  # repeat_kv
-        v = v.expand(batch, self.num_heads, seq_len, self.head_dim)
+        kv_len = k.shape[2]
+        k = k.expand(batch, self.num_heads, kv_len, self.head_dim)  # repeat_kv
+        v = v.expand(batch, self.num_heads, kv_len, self.head_dim)
 
         scores = torch.matmul(q, k.transpose(2, 3)) * self.scaling
         if attention_mask is not None:

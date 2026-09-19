@@ -38,11 +38,14 @@ def tiny_model_config() -> ModelConfig:
 
 def filled_ple(config: ModelConfig) -> PLE:
     """PLE with deterministic nonzero weights in [-1, 1)."""
-    ple = PLE(config)
+    generator = torch.Generator().manual_seed(2)  # isolated: full-suite RNG
+    # state must not shift these; seed 2 keeps the eps invariance residual
+    # at 1.4e-5 (measured), far under the 1e-4 atol — wiring errors are O(1)
+    ple = PLE(config)  # state left by earlier test files must not shift these
     with torch.no_grad():
-        ple.table.weight.uniform_(-1, 1)
-        ple.input_proj.weight.uniform_(-1, 1)
-        ple.projection_norm.weight.uniform_(0.5, 1.5)
+        ple.table.weight.uniform_(-1, 1, generator=generator)
+        ple.input_proj.weight.uniform_(-1, 1, generator=generator)
+        ple.projection_norm.weight.uniform_(0.5, 1.5, generator=generator)
     return ple
 
 

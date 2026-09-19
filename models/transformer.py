@@ -10,6 +10,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from models.attention import Attention, causal_mask
+from models.cache import ProducerKVCache
 from models.ple import PLE, RMSNorm
 
 
@@ -65,20 +66,28 @@ class Block(nn.Module):
         position_ids: torch.Tensor | None = None,
         shared_kv_states: dict | None = None,
         attention_mask: torch.Tensor | None = None,
+        key_valid: torch.Tensor | None = None,
     ) -> torch.Tensor:
         seq_len = hidden_states.shape[1]
         if position_ids is None:
-            position_ids = torch.arange(seq_len).unsqueeze(0).expand(hidden_states.shape[0], -1)
+            start = shared_kv_states.num_tokens if isinstance(shared_kv_states, ProducerKVCache) else 0
+            position_ids = torch.arange(start, start + seq_len).unsqueeze(0).expand(hidden_states.shape[0], -1)
         if shared_kv_states is None:
             shared_kv_states = {}
-        if attention_mask is None and self.attention is not None:
+        if isinstance(shared_kv_states, ProducerKVCache):
+            # Per-row-position causal mask per layer type; padding keys are
+            # masked through the cache-tracked `key_valid` validity vector.
+            attention_mask = shared_kv_states.attention_mask(
+                self.layer_idx, position_ids, key_valid, hidden_states.device
+            )
+        elif attention_mask is None and self.attention is not None:
             window = self.attention.local_window
             attention_mask = causal_mask(seq_len, window)
 
         if self.attention is not None:
             residual = hidden_states
             hidden_states = self.attention(
-                self.input_norm(hidden_states), position_ids, shared_kv_states, attention_mask
+                self.input_norm(hidden_states), position_ids, shared_kv_states, attention_mask, key_valid
             )
             hidden_states = residual + self.post_attention_norm(hidden_states)
 
@@ -120,20 +129,36 @@ class Gemma4LiteModel(nn.Module):
         self,
         input_ids: torch.Tensor,
         position_ids: torch.Tensor | None = None,
+        cache: ProducerKVCache | None = None,
+        key_valid: torch.Tensor | None = None,
     ) -> torch.Tensor:
         x = self.embed(input_ids) * self.embed_scale
         ple_signal = self.ple(input_ids, x)  # [B, T, L, P]
-        shared_kv_states: dict = {}  # one dict across the loop: consumers alias producers
+        if position_ids is None and cache is not None and key_valid is not None:
+            # Derive ONCE, before any producer appends this call's tokens:
+            # valid_counts() grows as soon as the first global producer runs,
+            # so per-block derivation would rope later blocks one step ahead.
+            position_ids = cache.valid_counts(input_ids.shape[0])[:, None] + (
+                key_valid.cumsum(1) - 1
+            ).clamp(min=0)
+        # One dict across the loop for training; with a cache, producers append
+        # and consumers alias per type. finish_step() commits/trims after the
+        # last consumer has run.
+        shared_kv_states: dict | ProducerKVCache = cache if cache is not None else {}
         for i, block in enumerate(self.blocks):
-            x = block(x, ple_signal[:, :, i, :], position_ids, shared_kv_states)
+            x = block(x, ple_signal[:, :, i, :], position_ids, shared_kv_states, None, key_valid)
+        if cache is not None:
+            cache.finish_step()
         return self.final_norm(x)
 
     def forward(
         self,
         input_ids: torch.Tensor,
         position_ids: torch.Tensor | None = None,
+        cache: ProducerKVCache | None = None,
+        key_valid: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        hidden = self.forward_hidden(input_ids, position_ids)
+        hidden = self.forward_hidden(input_ids, position_ids, cache, key_valid)
         weight = self.embed.weight if self.config.tie_embeddings else self.lm_head.weight
         logits = F.linear(hidden, weight)
         cap = self.config.logit_softcap
