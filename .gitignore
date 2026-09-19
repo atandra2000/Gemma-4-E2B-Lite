@@ -10,7 +10,9 @@ venv/
 
 # Training outputs / data (never committed)
 checkpoints/
-data/
+data/pretrain_corpus/
+data/shards/
+data/*.bin
 results/
 wandb/
 .huggingface/
