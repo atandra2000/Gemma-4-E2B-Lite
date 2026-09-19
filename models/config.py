@@ -212,7 +212,8 @@ def count_norms_and_buffers(config: ModelConfig) -> dict[str, int]:
     D, P = config.hidden_dim, config.ple_dim
     per_layer_norms = 5 * D
     q_norms = sum(config.head_dim(i) for i in range(config.n_layers))
-    kv_norms = sum(2 * config.head_dim(i) for i in range(config.share_boundary))
+    # K norm has a weight; the V norm normalizes WITHOUT one (source convention).
+    kv_norms = sum(config.head_dim(i) for i in range(config.share_boundary))
     return {
         "layer_norms": per_layer_norms * config.n_layers,
         "ple_projection_norm": P,

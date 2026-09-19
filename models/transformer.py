@@ -1,13 +1,13 @@
 """Decoder blocks: source norm conventions, gated GELU-tanh MLP, suffix double
-width, residual ordering, PLE gate application and the unit layer scalar
-(design §4). Attention is wired in by Task 4 (models/attention.py); the
-attention path here is structured and deferred.
+width, residual ordering, PLE gate application, the unit layer scalar and
+eager reference attention with cross-layer KV sharing (design §4).
 """
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 
+from models.attention import Attention, causal_mask
 from models.ple import RMSNorm
 
 
@@ -54,12 +54,30 @@ class Block(nn.Module):
         self.ple_gate = nn.Linear(dim, config.ple_dim, bias=False)
         self.ple_proj = nn.Linear(config.ple_dim, dim, bias=False)
         self.layer_scalar = nn.Buffer(torch.ones(1))
-        self.attention = None  # Task 4: models/attention.py owns this slot
+        self.attention = Attention(config, layer_idx)
 
-    def forward(self, hidden_states: torch.Tensor, ple_signal: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        ple_signal: torch.Tensor,
+        position_ids: torch.Tensor | None = None,
+        shared_kv_states: dict | None = None,
+        attention_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        seq_len = hidden_states.shape[1]
+        if position_ids is None:
+            position_ids = torch.arange(seq_len).unsqueeze(0).expand(hidden_states.shape[0], -1)
+        if shared_kv_states is None:
+            shared_kv_states = {}
+        if attention_mask is None and self.attention is not None:
+            window = self.attention.local_window
+            attention_mask = causal_mask(seq_len, window)
+
         if self.attention is not None:
             residual = hidden_states
-            hidden_states = self.attention(self.input_norm(hidden_states))
+            hidden_states = self.attention(
+                self.input_norm(hidden_states), position_ids, shared_kv_states, attention_mask
+            )
             hidden_states = residual + self.post_attention_norm(hidden_states)
 
         residual = hidden_states

@@ -140,6 +140,7 @@ class TestRMSNorm:
 class TestBlock:
     def block(self) -> tuple[Block, dict]:
         block = Block(config, layer_idx=0)
+        block.attention = None  # attention arithmetic is covered in test_attention.py
         with torch.no_grad():
             for norm in (
                 block.input_norm, block.post_attention_norm, block.pre_ffn_norm,
@@ -221,8 +222,10 @@ class TestGradientFlow:
         scaled = emb(ids) * (model_config.hidden_dim**0.5)
         signals = ple(ids, scaled)
         h = scaled
+        position_ids = torch.arange(ids.shape[1]).unsqueeze(0)
+        shared_kv_states = {}  # one request-local dict; producers store, consumers alias
         for i, block in enumerate(blocks):
-            h = block(h, signals[:, :, i, :])
+            h = block(h, signals[:, :, i, :], position_ids, shared_kv_states)
         loss = h.pow(2).sum()
         loss.backward()
 

@@ -12,19 +12,23 @@ class RMSNorm(nn.Module):
     """Source norm convention: FP32 compute, x * rsqrt(mean(x^2) + eps) * weight.
 
     The scale is a plain multiplier in Gemma 4 — not the (1 + weight) offset
-    of older Gemma generations.
+    of older Gemma generations. with_scale=False (the source V-norm) normalizes
+    with no learnable weight at all.
     """
 
-    def __init__(self, dim: int, eps: float):
+    def __init__(self, dim: int, eps: float, with_scale: bool = True):
         super().__init__()
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
+        self.with_scale = with_scale
+        self.weight = nn.Parameter(torch.ones(dim)) if with_scale else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         dtype = x.dtype
         x = x.float()
         x = x * torch.pow(x.pow(2).mean(-1, keepdim=True) + self.eps, -0.5)
-        return (x * self.weight.float()).to(dtype)
+        if self.with_scale:
+            x = x * self.weight.float()
+        return x.to(dtype)
 
 
 class PLE(nn.Module):
