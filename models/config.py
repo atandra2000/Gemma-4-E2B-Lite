@@ -46,6 +46,7 @@ class ModelConfig:
     global_rope_theta: float = 1_000_000.0  # proportional RoPE
     global_rope_partial_factor: float = 0.25  # rotary subspace = factor * global_head_dim
     attention_scale: float = 1.0  # never SDPA's default 1/sqrt(d)
+    attn_backend: str = "eager"  # "eager" reference | "sdpa"; parity gated in tests
     # Norm / output
     rms_eps: float = 1e-6
     logit_softcap: float = 30.0
@@ -112,6 +113,8 @@ class ModelConfig:
             raise ValueError(
                 f"attention_scale must be 1.0 (design §3), got {self.attention_scale}"
             )
+        if self.attn_backend not in ("eager", "sdpa"):
+            raise ValueError(f"attn_backend must be 'eager' or 'sdpa', got {self.attn_backend!r}")
 
     # -- layer maps ---------------------------------------------------------
 

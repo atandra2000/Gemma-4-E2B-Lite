@@ -8,6 +8,7 @@ output projection and logit softcap (design §4 forward pipeline).
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.utils.checkpoint import checkpoint
 
 from models.attention import Attention, causal_mask
 from models.cache import ProducerKVCache
@@ -58,6 +59,7 @@ class Block(nn.Module):
         self.ple_proj = nn.Linear(config.ple_dim, dim, bias=False)
         self.layer_scalar = nn.Buffer(torch.ones(1))
         self.attention = Attention(config, layer_idx)
+        self.gradient_checkpointing = False
 
     def forward(
         self,
@@ -86,10 +88,22 @@ class Block(nn.Module):
 
         if self.attention is not None:
             residual = hidden_states
-            hidden_states = self.attention(
-                self.input_norm(hidden_states), position_ids, shared_kv_states, attention_mask, key_valid
-            )
-            hidden_states = residual + self.post_attention_norm(hidden_states)
+            normed = self.input_norm(hidden_states)
+            if self.gradient_checkpointing:
+                # Recomputation re-runs this exact call with the same tensor
+                # arguments (RNG state preserved by checkpoint's default). The
+                # producer/consumer split is inside the re-run too, so producer
+                # K/V are recomputed fresh and consumers re-alias them — nothing
+                # is read from or written to a mutable dict at backward time.
+                normed = checkpoint(
+                    self.attention, normed, position_ids, shared_kv_states,
+                    attention_mask, key_valid, use_reentrant=False,
+                )
+            else:
+                normed = self.attention(
+                    normed, position_ids, shared_kv_states, attention_mask, key_valid
+                )
+            hidden_states = residual + self.post_attention_norm(normed)
 
         residual = hidden_states
         hidden_states = self.mlp(self.pre_ffn_norm(hidden_states))
@@ -124,6 +138,11 @@ class Gemma4LiteModel(nn.Module):
         self.final_norm = RMSNorm(config.hidden_dim, config.rms_eps)
         if not config.tie_embeddings:
             self.lm_head = nn.Linear(config.hidden_dim, config.vocab_size, bias=False)
+        self.checkpoint_blocks(False)
+
+    def checkpoint_blocks(self, enabled: bool) -> None:
+        for block in self.blocks:
+            block.gradient_checkpointing = enabled
 
     def forward_hidden(
         self,

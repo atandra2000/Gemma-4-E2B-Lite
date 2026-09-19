@@ -73,6 +73,7 @@ class Attention(nn.Module):
         self.head_dim = config.head_dim(layer_idx)
         self.num_heads = config.n_heads
         self.scaling = 1.0  # never SDPA's default inverse-square-root scale
+        self.attn_backend = config.attn_backend
         self.is_kv_shared_layer = layer_idx >= config.share_boundary
         self.local_window = config.local_window if self.layer_type == "local" else None
 
@@ -137,9 +138,19 @@ class Attention(nn.Module):
         k = k.expand(batch, self.num_heads, kv_len, self.head_dim)  # repeat_kv
         v = v.expand(batch, self.num_heads, kv_len, self.head_dim)
 
-        scores = torch.matmul(q, k.transpose(2, 3)) * self.scaling
-        if attention_mask is not None:
-            scores = scores + attention_mask
-        weights = F.softmax(scores, dim=-1, dtype=torch.float32).to(q.dtype)
-        out = torch.matmul(weights, v).transpose(1, 2).reshape(batch, seq_len, -1)
-        return self.o_proj(out)
+        if self.attn_backend == "sdpa":
+            # SDPA needs the additive mask broadcastable to [B, H, T, kv_len]:
+            # a plain [T, kv] causal/window mask expands over batch and heads.
+            mask = attention_mask
+            if mask is not None and mask.dim() == 2:
+                mask = mask[None, None]
+            out = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=mask, scale=self.scaling
+            )
+        else:  # "eager" reference: explicit softmax, the Task 4 oracle path
+            scores = torch.matmul(q, k.transpose(2, 3)) * self.scaling
+            if attention_mask is not None:
+                scores = scores + attention_mask
+            weights = F.softmax(scores, dim=-1, dtype=torch.float32).to(q.dtype)
+            out = torch.matmul(weights, v)
+        return self.o_proj(out.transpose(1, 2).reshape(batch, seq_len, -1))

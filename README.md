@@ -7,16 +7,19 @@ workspace corpus; one A100 80GB target. This is an E2B-derived Lite adaptation,
 not a checkpoint-compatible reproduction (~349M parameters from the design's
 analytic ledger, exact count established by the instantiated-model gate).
 
-**Status: full forward and upstream oracle complete (Task 5 of the execution
-plan) — CPU-correct through Checkpoint A.** `models/config.py` holds the
-validated architecture contract, producer map and analytic ledger
-(large-matrix subtotal 348,882,944); `models/ple.py`, `models/attention.py` +
-`models/transformer.py` implement PLE, decoder-block arithmetic, eager
-local/global attention with cross-layer KV sharing, and the full forward
-(final norm, tied head, softcap). Tiny-weight parity against the pinned
-v5.15.1 upstream oracle is verified in `tests/test_reference.py`, and the
-exact instantiated total is **348,965,184** parameters (ledger reconciled,
-`scripts/parameter_budget.py`). No training or data yet.
+**Status: SDPA backend and activation-checkpointing complete (Task 7 of the
+execution plan) — CPU-correct through Phase 2's attention backends.**
+`models/config.py` holds the validated architecture contract, producer map and
+analytic ledger (large-matrix subtotal 348,882,944); `models/ple.py`,
+`models/attention.py` + `models/transformer.py` implement PLE, decoder-block
+arithmetic, eager/SDPA local/global attention with cross-layer KV sharing, the
+full forward (final norm, tied head, softcap), the producer-owned KV cache
+with greedy generation, and non-reentrant activation checkpointing with
+verified gradient parity (`tests/test_backends.py`). Tiny-weight parity
+against the pinned v5.15.1 upstream oracle is verified in
+`tests/test_reference.py`, and the exact instantiated total is **348,965,184**
+parameters (ledger reconciled, `scripts/parameter_budget.py`). No training or
+data yet; chunked loss (Task 8) is next.
 
 ## Documents
 
