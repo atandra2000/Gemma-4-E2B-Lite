@@ -7,10 +7,12 @@ workspace corpus; one A100 80GB target. This is an E2B-derived Lite adaptation,
 not a checkpoint-compatible reproduction (~349M parameters from the design's
 analytic ledger, exact count established by the instantiated-model gate).
 
-**Status: configuration and analytical ledger complete (Task 2 of the execution
-plan).** `models/config.py` holds the validated architecture contract, producer
-map and analytic ledger (large-matrix subtotal 348,882,944; exact total pending
-the Task 5 instantiated-model gate). No model modules, training or data exist yet.
+**Status: PLE and block arithmetic complete (Task 3 of the execution plan).**
+`models/config.py` holds the validated architecture contract, producer map and
+analytic ledger (large-matrix subtotal 348,882,944); `models/ple.py` +
+`models/transformer.py` implement PLE and decoder-block arithmetic from the
+pinned v5.15.1 semantics. Attention (Task 4), oracle parity and the exact
+instantiated-parameter total (Task 5) are pending. No training or data yet.
 
 ## Documents
 

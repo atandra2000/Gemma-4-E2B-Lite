@@ -205,14 +205,17 @@ def count_large_matrices(config: ModelConfig) -> dict[str, int]:
 
 def count_norms_and_buffers(config: ModelConfig) -> dict[str, int]:
     """Norm weights (parameters) and unit layer-scalar buffers (not parameters),
-    reported so the ledger can distinguish them from the large matrices."""
+    reported so the ledger can distinguish them from the large matrices.
+    Norm set matches the v5.15.1 source: input, post-attention, pre-FFN,
+    post-FFN and post-PLE norms per layer, one shared P-dim projection norm,
+    Q norm per layer, K/V norms on producers only, final norm."""
     D, P = config.hidden_dim, config.ple_dim
-    per_layer_norms = 4 * D  # input, post-attention, pre-FFN, post-FFN norms
+    per_layer_norms = 5 * D
     q_norms = sum(config.head_dim(i) for i in range(config.n_layers))
     kv_norms = sum(2 * config.head_dim(i) for i in range(config.share_boundary))
     return {
         "layer_norms": per_layer_norms * config.n_layers,
-        "ple_norms": P * config.n_layers,
+        "ple_projection_norm": P,
         "q_norms": q_norms,
         "kv_norms_producer_only": kv_norms,
         "final_norm": D,

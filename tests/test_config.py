@@ -54,7 +54,7 @@ class TestProductionConfig:
         assert norms["unit_layer_scalar_buffers"] == 20
         # Subtotal deliberately excludes norms; they are reported separately.
         assert all(k not in DESIGN_ROWS for k in norms)
-        total = norms["layer_norms"] + norms["ple_norms"] + norms["q_norms"] + norms["kv_norms_producer_only"] + norms["final_norm"]
+        total = norms["layer_norms"] + norms["ple_projection_norm"] + norms["q_norms"] + norms["kv_norms_producer_only"] + norms["final_norm"]
         assert total > 0
 
     def test_tying_and_softcap_pinned(self):
