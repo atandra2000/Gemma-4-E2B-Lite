@@ -37,3 +37,23 @@ newer upstream version.
 - macOS dev host (arm64), CPU/MPS only — no CUDA, no Triton.
 - `uv` 0.12.12, Python 3.14.7, torch 2.12.0 importable system-wide.
 - GPU-dependent verification (BF16 parity, A100 fit) is deferred to Task 11.
+
+## Oracle environment (recorded at Task 5, 2026-09-19)
+
+The numerical-parity gate (`tests/test_reference.py`) ran against the pinned
+upstream source in this environment — not skipped:
+
+- `transformers` **5.15.1** installed from PyPI into the user site-packages
+  (`~/Library/Python/3.14/lib/python/site-packages`), shadowing an older
+  5.10.2 system copy. Test-only dependency; runtime code imports no
+  transformers (checked: `sys.modules` stays clean after importing `models`).
+- `safetensors` 0.8.0 (5.15.1's floor) installed alongside.
+- `modeling_gemma4.py` SHA-256 **recomputed at import time and verified
+  against the pin** (`4f874549…0cc3`): exact match. The 5.10.2→5.15.1 diff in
+  the text path is registration style and vision/audio plumbing only; the
+  norm, decoder-layer, PLE, softcap and eager-attention semantics used here
+  are unchanged.
+- Parity result: tiny-config logits, PLE signals, per-layer hidden states,
+  loss and every mapped parameter gradient agree at CPU FP32
+  atol=1e-5/rtol=1e-4, including a forward crossing the local-window edge
+  (T=33, window 32).

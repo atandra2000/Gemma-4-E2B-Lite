@@ -1,6 +1,8 @@
 """Decoder blocks: source norm conventions, gated GELU-tanh MLP, suffix double
 width, residual ordering, PLE gate application, the unit layer scalar and
-eager reference attention with cross-layer KV sharing (design §4).
+eager reference attention with cross-layer KV sharing (design §4). The full
+model wires scaled main embedding + PLE through the blocks, final norm, tied
+output projection and logit softcap (design §4 forward pipeline).
 """
 
 import torch
@@ -8,7 +10,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from models.attention import Attention, causal_mask
-from models.ple import RMSNorm
+from models.ple import PLE, RMSNorm
 
 
 class GatedGeluMlp(nn.Module):
@@ -91,3 +93,50 @@ class Block(nn.Module):
         hidden_states = residual + hidden_states
 
         return hidden_states * self.layer_scalar
+
+
+class Gemma4LiteModel(nn.Module):
+    """Full model (design §4): IDs -> scaled main embedding + PLE -> blocks ->
+    final RMSNorm -> tied vocabulary projection -> softcap.
+
+    forward_hidden() returns the normalized final hidden states [B, T, D] for
+    the chunked training loss (Task 8); forward() returns softcapped logits
+    [B, T, V]. With tie_embeddings the head is the embedding matrix applied by
+    F.linear — no second vocabulary storage exists to reconcile.
+    """
+
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.embed = nn.Embedding(config.vocab_size, config.hidden_dim)
+        self.embed_scale = config.hidden_dim**0.5
+        self.ple = PLE(config)
+        self.blocks = nn.ModuleList(Block(config, i) for i in range(config.n_layers))
+        self.final_norm = RMSNorm(config.hidden_dim, config.rms_eps)
+        if not config.tie_embeddings:
+            self.lm_head = nn.Linear(config.hidden_dim, config.vocab_size, bias=False)
+
+    def forward_hidden(
+        self,
+        input_ids: torch.Tensor,
+        position_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        x = self.embed(input_ids) * self.embed_scale
+        ple_signal = self.ple(input_ids, x)  # [B, T, L, P]
+        shared_kv_states: dict = {}  # one dict across the loop: consumers alias producers
+        for i, block in enumerate(self.blocks):
+            x = block(x, ple_signal[:, :, i, :], position_ids, shared_kv_states)
+        return self.final_norm(x)
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        position_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        hidden = self.forward_hidden(input_ids, position_ids)
+        weight = self.embed.weight if self.config.tie_embeddings else self.lm_head.weight
+        logits = F.linear(hidden, weight)
+        cap = self.config.logit_softcap
+        if cap is not None:
+            logits = cap * torch.tanh(logits / cap)
+        return logits

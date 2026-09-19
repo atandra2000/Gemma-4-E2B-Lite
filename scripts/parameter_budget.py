@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Print the analytic parameter ledger and memory assumptions for a config.
 
-Analytic counts only (design §3): the exact total comes from instantiating the
-model on CPU/meta in Task 5, so no "exact" total is printed here.
+Reconciles the analytic counts against the instantiated model on the meta
+device (exact total, Task 5 gate): every parameter is classified into a ledger
+group, embedding tying is verified structurally, and absent consumer K/V and
+norm weights are asserted. Any mismatch raises instead of printing a total.
 """
 
 import argparse
@@ -10,6 +12,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # repo root for `models`
+
+import torch  # noqa: E402
 
 from models.config import (  # noqa: E402
     ModelConfig,
@@ -19,6 +23,82 @@ from models.config import (  # noqa: E402
 )
 
 DESIGN_SUBTOTAL = 348_882_944  # design §3 large-matrix subtotal, production config
+
+
+def classify_parameter(name: str) -> str:
+    """Map a Gemma4LiteModel parameter name to its analytic ledger group."""
+    if name == "embed.weight":
+        return "main_embedding_tied"
+    if name == "lm_head.weight":
+        raise AssertionError("untied lm_head storage is not in the design ledger")
+    if name == "ple.table.weight":
+        return "ple_token_table"
+    if name == "ple.input_proj.weight" or ".ple_gate.weight" in name or ".ple_proj.weight" in name:
+        return "ple_projections"
+    if name == "ple.projection_norm.weight":
+        return "ple_projection_norm"
+    if ".mlp." in name:
+        return "mlp_matrices"
+    if ".attention.q_proj." in name or ".attention.o_proj." in name:
+        return "q_and_output_projections"
+    if ".attention.k_proj." in name or ".attention.v_proj." in name:
+        return "kv_projections_prefix_only"
+    if ".attention.q_norm." in name:
+        return "q_norms"
+    if ".attention.k_norm." in name:
+        return "kv_norms_producer_only"
+    if name == "final_norm.weight":
+        return "final_norm"
+    if name.endswith((".input_norm.weight", ".post_attention_norm.weight",
+                      ".pre_ffn_norm.weight", ".post_ffn_norm.weight",
+                      ".post_ple_norm.weight")):
+        return "layer_norms"
+    raise AssertionError(f"parameter {name!r} does not belong to any ledger group")
+
+
+def reconcile_with_ledger(config: ModelConfig) -> dict[str, int]:
+    """Instantiate on the meta device and reconcile every parameter with the
+    analytic ledger. Returns the exact group counts; raises on any mismatch."""
+    from models.transformer import Gemma4LiteModel
+
+    if not config.tie_embeddings:
+        raise NotImplementedError("untied-head ledger is a design revision, not a task 5 gate")
+
+    with torch.device("meta"):
+        model = Gemma4LiteModel(config)
+    parameters = dict(model.named_parameters())  # unique storages: tied head counted once
+    buffers = list(model.named_buffers())
+
+    # Structural sharing contract: the tied head is not a second storage, and
+    # shared-suffix layers have no K/V projections or K/V norm weights at all
+    # (the V norm normalizes without a weight even on producers).
+    assert not any("lm_head" in n for n in parameters)
+    assert not any("v_norm" in n for n in parameters)
+    for i in config.shared_layers():
+        absent = (f"blocks.{i}.attention.k_proj", f"blocks.{i}.attention.v_proj",
+                  f"blocks.{i}.attention.k_norm", f"blocks.{i}.attention.v_norm")
+        assert not any(any(n.startswith(a + ".") for n in parameters) for a in absent)
+
+    scalars = [n for n, _ in buffers if n.endswith("layer_scalar")]
+    assert len(scalars) == config.n_layers, f"expected {config.n_layers} unit layer scalars"
+
+    instantiated: dict[str, int] = {}
+    for name, parameter in parameters.items():
+        group = classify_parameter(name)
+        instantiated[group] = instantiated.get(group, 0) + parameter.numel()
+
+    expected = count_large_matrices(config) | count_norms_and_buffers(config)
+    for group, count in expected.items():
+        if group in ("subtotal_excluding_norms", "unit_layer_scalar_buffers"):
+            continue  # derived summary / buffers, not parameter groups
+        got = instantiated.get(group, 0)
+        if got != count:
+            raise AssertionError(
+                f"ledger mismatch for {group}: instantiated {got:,} != analytic {count:,}"
+            )
+    unknown = set(instantiated) - set(expected)
+    assert not unknown, f"instantiated groups missing from the ledger: {sorted(unknown)}"
+    return instantiated
 
 
 def main() -> int:
@@ -62,7 +142,14 @@ def main() -> int:
         v for k, v in norms.items() if "buffers" not in k
     )
     print(f"\n  analytic total incl. norms: {total:,}")
-    print("  exact total: pending Task 5 instantiated-model gate (CPU/meta)")
+
+    instantiated = reconcile_with_ledger(config)
+    exact = sum(instantiated.values())
+    print(f"\nInstantiated model (meta device, exact):")
+    print(f"  parameters (unique storages): {exact:,}")
+    print(f"  unit layer-scalar buffers:    {config.n_layers}")
+    verdict = "matches the analytic ledger" if exact == total else "MISMATCH vs analytic total"
+    print(f"  reconciliation: {verdict}")
 
     print("\nMemory assumptions (design §3, conservative):")
     for key, value in memory.items():
