@@ -27,8 +27,13 @@ newer upstream version.
 
 ## Pending pins
 
-- **Tokenizer assets** (GPT-2 BPE, EOS 50,256): hash pinned in the data
-  manifest at Task 9, not here.
+- **Tokenizer assets** (GPT-2 BPE, EOS 50,256): no file hash pinned here.
+  The contract is enforced at load time — `data/dataset.py:ShardWindows`
+  rejects a manifest whose tokenizer name disagrees with the project
+  contract (`gpt2`) and flags sampled out-of-range token IDs
+  (`ShardWindows.validate`); the shared pipeline records the manifest at
+  data prep. No corpus has been prepared in this repo yet — the adapter
+  (Task 9) and preflight harness ship code, not data.
 - **Weights:** none downloaded. Task 1 explicitly excludes training data and
   checkpoint downloads.
 
