@@ -1,0 +1,50 @@
+# Smoke configuration: tiny CPU model over synthetic data only (design §5 —
+# synthetic data is allowed ONLY in this named configuration). Architecture
+# has two full local/global periods after the producer prefix; every consumer
+# has a same-type producer (validated by tests/test_config.py).
+
+model:
+  vocab_size: 50257          # real tokenizer contract; synthetic token IDs
+  eos_id: 50256
+  hidden_dim: 64
+  n_layers: 12
+  n_heads: 2
+  local_head_dim: 32
+  global_head_dim: 64
+  global_layers: [2, 5, 8, 11]
+  share_boundary: 6
+  ple_dim: 8
+  mlp_hidden_dim: 128
+  mlp_suffix_multiplier: 2
+  local_window: 32
+  local_rope_theta: 10000.0
+  global_rope_theta: 1000000.0
+  global_rope_partial_factor: 0.25
+  attention_scale: 1.0
+  rms_eps: 1.0e-6
+  logit_softcap: 30.0
+  tie_embeddings: true
+
+training:
+  seq_len: 64
+  total_tokens: 32768
+  optimizer: adamw
+  lr: 1.0e-4
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 0.1
+  grad_clip: 1.0
+  warmup_fraction: 0.01
+  lr_final_fraction: 0.1
+  accumulation_tokens: 4096
+  microbatch_sizes: [1]
+  precision:
+    params: float32
+    autocast: null           # CPU smoke runs eager FP32
+  activation_checkpointing: false
+  torch_compile: false
+
+data:
+  # The ONLY synthetic-data configuration (design §5).
+  source: synthetic
+  seed: 0

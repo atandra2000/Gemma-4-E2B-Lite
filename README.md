@@ -7,8 +7,10 @@ workspace corpus; one A100 80GB target. This is an E2B-derived Lite adaptation,
 not a checkpoint-compatible reproduction (~349M parameters from the design's
 analytic ledger, exact count established by the instantiated-model gate).
 
-**Status: skeleton (Task 1 of the execution plan).** No model code, tests or
-data exist yet.
+**Status: configuration and analytical ledger complete (Task 2 of the execution
+plan).** `models/config.py` holds the validated architecture contract, producer
+map and analytic ledger (large-matrix subtotal 348,882,944; exact total pending
+the Task 5 instantiated-model gate). No model modules, training or data exist yet.
 
 ## Documents
 

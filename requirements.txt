@@ -1,5 +1,6 @@
 # Runtime (raw PyTorch only)
 torch>=2.4.0
+pyyaml>=6.0   # configs/*.yaml loading (models/config.py)
 
 # Test-only dependencies (kept here so `pip install -r requirements.txt` is
 # enough for CPU test runs; NOT imported by model/training code).

@@ -1,0 +1,51 @@
+# Production configuration (design spec §3 architecture, §5 training recipe).
+# Data keys are filled in by Task 9 (data adapter); training-loop keys are
+# consumed from Task 10 onward. Architecture fields are validated by
+# models/config.py — unknown or incompatible values fail at load.
+
+model:
+  vocab_size: 50257          # GPT-2 BPE; EOS 50,256 terminates (pinned convention)
+  eos_id: 50256
+  hidden_dim: 768
+  n_layers: 20
+  n_heads: 6                 # one KV head per layer (multi-query)
+  local_head_dim: 128
+  global_head_dim: 256       # pinned 1:2 relation with local
+  global_layers: [4, 9, 14, 19]  # four local then one global; final layer global
+  share_boundary: 10         # prefix 0-9 produces K/V; 10-19 consume
+  ple_dim: 64
+  mlp_hidden_dim: 3072       # shared suffix doubles to 6144
+  mlp_suffix_multiplier: 2
+  local_window: 512
+  local_rope_theta: 10000.0
+  global_rope_theta: 1000000.0
+  global_rope_partial_factor: 0.25  # rotary subspace 64
+  attention_scale: 1.0
+  rms_eps: 1.0e-6
+  logit_softcap: 30.0
+  tie_embeddings: true
+
+training:
+  seq_len: 4096              # no length curriculum in v1
+  total_tokens: 8000000000   # budget target, not proven optimum
+  optimizer: adamw
+  lr: 3.0e-4
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  weight_decay: 0.1
+  grad_clip: 1.0
+  warmup_fraction: 0.01      # token-based, over the planned run
+  lr_final_fraction: 0.1     # cosine decay to 10% of peak
+  accumulation_tokens: 65536 # valid tokens per update, normalized by actual count
+  microbatch_sizes: [1, 2]   # benchmark 1 then 2
+  precision:
+    params: float32          # FP32 params with BF16 autocast on A100; no GradScaler
+    autocast: bfloat16
+  activation_checkpointing: true
+  torch_compile: false       # enabled only after eager parity (design §5)
+
+data:
+  # Placeholder until Task 9 wires the shared pipeline; production must fail
+  # on absent/mismatched data.
+  source: shared_workspace_corpus
+  manifest: null
