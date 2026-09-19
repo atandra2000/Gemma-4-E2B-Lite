@@ -1,0 +1,239 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Gemma-4-E2B-Lite · Pretraining Loop",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "lanes": [
+    {
+      "id": "intake",
+      "label": "Setup + Intake"
+    },
+    {
+      "id": "loop",
+      "label": "Training Loop"
+    },
+    {
+      "id": "store",
+      "label": "Checkpoint Store"
+    },
+    {
+      "id": "guard",
+      "label": "Guard Failure",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake",
+      "label": "Intake",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "guarded_update",
+      "label": "Guarded Update",
+      "fromCol": 3,
+      "toCol": 5,
+      "variant": "emphasis"
+    }
+  ],
+  "groups": [
+    {
+      "id": "loop_body",
+      "label": "Per-window work",
+      "lane": "loop",
+      "fromCol": 3,
+      "toCol": 5
+    }
+  ],
+  "mainPath": [
+    "load_config",
+    "init_model",
+    "stream_batches",
+    "fwd_bwd",
+    "finite_gate",
+    "adamw_step",
+    "atomic_save"
+  ],
+  "semanticChecks": {
+    "allowedRoots": [
+      "load_config"
+    ],
+    "allowedTerminals": [
+      "atomic_save"
+    ],
+    "requiredEdges": [
+      {
+        "from": "finite_gate",
+        "to": "skip_update"
+      }
+    ],
+    "requiredPaths": [
+      {
+        "from": "load_config",
+        "to": "atomic_save"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "load_config",
+      "lane": "intake",
+      "col": 0,
+      "type": "frontend",
+      "label": "Load Config",
+      "sublabel": "configs/smoke.yaml",
+      "width": 164
+    },
+    {
+      "id": "init_model",
+      "lane": "intake",
+      "col": 1,
+      "type": "backend",
+      "label": "Init Model + AdamW",
+      "sublabel": "seed 42 · decay matrices only",
+      "width": 172
+    },
+    {
+      "id": "stream_batches",
+      "lane": "intake",
+      "col": 2,
+      "type": "external",
+      "label": "Batch Stream",
+      "sublabel": "synthetic / shard loader",
+      "tag": "labels = inputs",
+      "width": 156
+    },
+    {
+      "id": "fwd_bwd",
+      "lane": "loop",
+      "col": 3,
+      "type": "backend",
+      "label": "Forward + Backward",
+      "sublabel": "chunked CE · sum-scaled",
+      "width": 184
+    },
+    {
+      "id": "finite_gate",
+      "lane": "loop",
+      "col": 4,
+      "type": "security",
+      "label": "Finite Gate",
+      "sublabel": "loss + grads",
+      "tag": "blocking",
+      "width": 150
+    },
+    {
+      "id": "adamw_step",
+      "lane": "loop",
+      "col": 5,
+      "type": "backend",
+      "label": "AdamW Step",
+      "sublabel": "÷ valid · clip · cosine lr",
+      "tag": "step += 1",
+      "width": 172
+    },
+    {
+      "id": "atomic_save",
+      "lane": "store",
+      "col": 5,
+      "type": "database",
+      "label": "Atomic Generation",
+      "sublabel": "gen_<step> + pointer.json",
+      "tag": "every step",
+      "width": 162
+    },
+    {
+      "id": "skip_update",
+      "lane": "guard",
+      "col": 4,
+      "type": "security",
+      "label": "Skip Update",
+      "sublabel": "zero_grad · drop window",
+      "width": 156
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_config",
+      "to": "init_model"
+    },
+    {
+      "from": "init_model",
+      "to": "stream_batches"
+    },
+    {
+      "from": "stream_batches",
+      "to": "fwd_bwd",
+      "label": "batch"
+    },
+    {
+      "from": "fwd_bwd",
+      "to": "finite_gate",
+      "label": "loss · grad norms"
+    },
+    {
+      "from": "finite_gate",
+      "to": "adamw_step",
+      "label": "finite",
+      "variant": "emphasis"
+    },
+    {
+      "from": "finite_gate",
+      "to": "skip_update",
+      "label": "NaN",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "from": "skip_update",
+      "to": "fwd_bwd",
+      "label": "continue without update",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "from": "adamw_step",
+      "to": "atomic_save",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "adamw_step",
+      "to": "fwd_bwd",
+      "label": "next window · until tokens_seen ≥ total_tokens",
+      "variant": "dashed",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Token Schedule",
+      "items": [
+        "Windows fill by actual valid tokens, not a fixed batch count; gradients normalize by valid tokens at update time",
+        "lr_at follows warmup→cosine on optimizer steps (token-schedule semantics)"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Atomic Resume",
+      "items": [
+        "Each save is a complete generation — model.safetensors + optim.pt + rng.pt + meta.json — committed by a pointer.json rename",
+        "resume restores RNG state and replay-skips consumed batches; init is seeded for identical rebuilds"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Skip, Never NaN",
+      "items": [
+        "Nonfinite loss or grad norm skips the optimizer update and zeroes gradients; the window is dropped",
+        "AdamW weight decay applies to matrices only — norm weights, embeddings, PLE table excluded"
+      ]
+    }
+  ]
+}

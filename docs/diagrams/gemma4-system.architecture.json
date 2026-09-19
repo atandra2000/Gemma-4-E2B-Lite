@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Gemma-4-E2B-Lite · System Architecture",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1240,
+      700
+    ]
+  },
+  "components": [
+    {
+      "id": "token-input",
+      "type": "external",
+      "label": "Token IDs",
+      "sublabel": "GPT-2 BPE · V=50,257",
+      "tag": "EOS 50,256",
+      "pos": [
+        30,
+        290
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "embed-scaled",
+      "type": "backend",
+      "label": "Scaled Embedding",
+      "sublabel": "embed(x) * sqrt(D)",
+      "tag": "D = 768",
+      "pos": [
+        220,
+        140
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "ple-module",
+      "type": "backend",
+      "label": "PLE Module",
+      "sublabel": "Identity + RMSNorm(Proj)",
+      "tag": "P = 64 · L = 20",
+      "pos": [
+        220,
+        440
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "producer-blocks",
+      "type": "backend",
+      "label": "Layers 0–9: Producers",
+      "sublabel": "10 prefix blocks · Q/K/V",
+      "tag": "8 local · 2 global",
+      "pos": [
+        440,
+        290
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "consumer-blocks",
+      "type": "backend",
+      "label": "Layers 10–19: Consumers",
+      "sublabel": "10 suffix blocks · 2× MLP",
+      "tag": "alias producer K/V",
+      "pos": [
+        680,
+        290
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "kv-cache",
+      "type": "database",
+      "label": "ProducerKVCache",
+      "sublabel": "10 streams · local trim 512",
+      "tag": "request-local",
+      "pos": [
+        570,
+        460
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "final-norm",
+      "type": "backend",
+      "label": "Final RMSNorm",
+      "sublabel": "FP32 compute · dim 768",
+      "tag": "eps = 1e-6",
+      "pos": [
+        915,
+        290
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "chunked-loss",
+      "type": "backend",
+      "label": "Chunked Causal CE",
+      "sublabel": "next-token shift · chkpt",
+      "tag": "training: 1024 chunks",
+      "pos": [
+        1085,
+        140
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "tied-head",
+      "type": "backend",
+      "label": "Tied Head & Softcap",
+      "sublabel": "F.linear · cap = 30.0",
+      "tag": "shared embed.weight",
+      "pos": [
+        1085,
+        290
+      ],
+      "size": [
+        140,
+        64
+      ]
+    },
+    {
+      "id": "gen-output",
+      "type": "external",
+      "label": "Greedy Generation",
+      "sublabel": "argmax decode · EOS stop",
+      "tag": "inference: generate.py",
+      "pos": [
+        1085,
+        440
+      ],
+      "size": [
+        140,
+        64
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "token-input",
+      "to": "embed-scaled",
+      "label": "tokens",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "from": "token-input",
+      "to": "ple-module",
+      "label": "token IDs",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "from": "embed-scaled",
+      "to": "ple-module",
+      "label": "scaled embed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "from": "embed-scaled",
+      "to": "producer-blocks",
+      "label": "hidden in",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "ple-module",
+      "to": "producer-blocks",
+      "label": "ple_signal",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "producer-blocks",
+      "to": "consumer-blocks",
+      "label": "h [B,T,D]",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "producer-blocks",
+      "to": "kv-cache",
+      "label": "store K/V",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "kv-cache",
+      "to": "consumer-blocks",
+      "label": "alias K/V",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "bottom"
+    },
+    {
+      "from": "consumer-blocks",
+      "to": "final-norm",
+      "label": "layer 19 out",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "final-norm",
+      "to": "chunked-loss",
+      "label": "hidden [B,T,D]",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "from": "final-norm",
+      "to": "tied-head",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "tied-head",
+      "to": "gen-output",
+      "label": "logits",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Architectural Core",
+      "items": [
+        "Per-Layer Embeddings (PLE) blend identity table and projected embeddings",
+        "20 decoder blocks split at boundary 10 into 10 producers and 10 consumers",
+        "Shared suffix layers alias prefix K/V states and double MLP intermediate width"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Attention Hierarchy",
+      "items": [
+        "16 local layers use 512-token sliding window and 10k standard RoPE",
+        "4 global layers use full sequence attention and proportional 1M RoPE",
+        "Multi-Query Attention (6 Q heads, 1 KV head) with explicit scale 1.0"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Execution Separation",
+      "items": [
+        "Training uses chunked causal CE under checkpointing to avoid full logit tensors",
+        "Inference uses request-local ProducerKVCache with local stream trimming to 512",
+        "Tied vocabulary projection eliminates duplicate embedding parameter storage"
+      ]
+    }
+  ]
+}

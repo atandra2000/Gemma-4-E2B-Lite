@@ -1,0 +1,409 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Gemma-4-E2B-Lite · Decoder Block",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1240,
+      480
+    ]
+  },
+  "components": [
+    {
+      "id": "block-input",
+      "type": "external",
+      "label": "Block Input",
+      "sublabel": "hidden [B,T,D]",
+      "tag": "layer i of 20",
+      "pos": [
+        30,
+        270
+      ],
+      "size": [
+        180,
+        68
+      ]
+    },
+    {
+      "id": "attn-input-norm",
+      "type": "backend",
+      "label": "Input RMSNorm",
+      "sublabel": "FP32 · dim 768",
+      "pos": [
+        280,
+        100
+      ],
+      "size": [
+        160,
+        50
+      ]
+    },
+    {
+      "id": "attention",
+      "type": "backend",
+      "label": "Attention",
+      "sublabel": "MQA · RoPE · scale 1",
+      "tag": "eager / SDPA",
+      "pos": [
+        280,
+        180
+      ],
+      "size": [
+        150,
+        68
+      ]
+    },
+    {
+      "id": "kv-producer",
+      "type": "messagebus",
+      "label": "KV Producer",
+      "sublabel": "k/v · norms · rope",
+      "tag": "prefix 0–9",
+      "pos": [
+        480,
+        100
+      ],
+      "size": [
+        160,
+        58
+      ]
+    },
+    {
+      "id": "kv-consumer",
+      "type": "database",
+      "label": "KV Consumer",
+      "sublabel": "aliases producer",
+      "tag": "suffix 10–19",
+      "pos": [
+        480,
+        185
+      ],
+      "size": [
+        160,
+        58
+      ]
+    },
+    {
+      "id": "post-attn-norm",
+      "type": "backend",
+      "label": "Post-Attn Norm",
+      "sublabel": "RMSNorm · +res",
+      "pos": [
+        280,
+        280
+      ],
+      "size": [
+        160,
+        50
+      ]
+    },
+    {
+      "id": "pre-ffn-norm",
+      "type": "backend",
+      "label": "Pre-FFN Norm",
+      "sublabel": "RMSNorm",
+      "pos": [
+        740,
+        100
+      ],
+      "size": [
+        160,
+        50
+      ]
+    },
+    {
+      "id": "mlp",
+      "type": "backend",
+      "label": "Gated GELU MLP",
+      "sublabel": "gelu(gate) · up→down",
+      "tag": "2× → 6144",
+      "pos": [
+        740,
+        190
+      ],
+      "size": [
+        160,
+        70
+      ]
+    },
+    {
+      "id": "post-ffn-norm",
+      "type": "backend",
+      "label": "Post-FFN Norm",
+      "sublabel": "RMSNorm · +res",
+      "pos": [
+        740,
+        290
+      ],
+      "size": [
+        160,
+        50
+      ]
+    },
+    {
+      "id": "ple-gate",
+      "type": "backend",
+      "label": "PLE Gate",
+      "sublabel": "gelu(gate) · ×signal",
+      "tag": "P = 64",
+      "pos": [
+        1040,
+        100
+      ],
+      "size": [
+        160,
+        56
+      ]
+    },
+    {
+      "id": "ple-proj",
+      "type": "backend",
+      "label": "PLE Projection",
+      "sublabel": "P → D · proj",
+      "pos": [
+        1040,
+        220
+      ],
+      "size": [
+        160,
+        50
+      ]
+    },
+    {
+      "id": "layer-scalar",
+      "type": "backend",
+      "label": "× Layer Scalar",
+      "sublabel": "unit buffer out",
+      "tag": "not a parameter",
+      "pos": [
+        1040,
+        330
+      ],
+      "size": [
+        160,
+        56
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "1 · Attention",
+      "wraps": [
+        "attn-input-norm",
+        "attention",
+        "kv-producer",
+        "kv-consumer",
+        "post-attn-norm"
+      ],
+      "pad": 30
+    },
+    {
+      "kind": "region",
+      "label": "2 · MLP",
+      "wraps": [
+        "pre-ffn-norm",
+        "mlp",
+        "post-ffn-norm"
+      ],
+      "pad": 20
+    },
+    {
+      "kind": "region",
+      "label": "3 · PLE",
+      "wraps": [
+        "ple-gate",
+        "ple-proj"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "from": "block-input",
+      "to": "attn-input-norm",
+      "label": "hidden",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "block-input",
+      "to": "post-attn-norm",
+      "label": "residual ⟂",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": 20
+    },
+    {
+      "from": "attn-input-norm",
+      "to": "attention",
+      "label": "norm(h)",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "attention",
+      "to": "kv-producer",
+      "label": "computes K/V",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        455,
+        166
+      ]
+    },
+    {
+      "from": "kv-producer",
+      "to": "kv-consumer",
+      "label": "K/V stream",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        562,
+        172
+      ]
+    },
+    {
+      "from": "kv-consumer",
+      "to": "attention",
+      "label": "alias K/V",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelAt": [
+        455,
+        258
+      ]
+    },
+    {
+      "from": "attention",
+      "to": "post-attn-norm",
+      "label": "attn(h)",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "post-attn-norm",
+      "to": "pre-ffn-norm",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [
+        [
+          695,
+          305
+        ],
+        [
+          695,
+          125
+        ]
+      ]
+    },
+    {
+      "from": "post-attn-norm",
+      "to": "post-ffn-norm",
+      "label": "residual ⟂",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "from": "pre-ffn-norm",
+      "to": "mlp",
+      "label": "norm(h)",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        820,
+        164
+      ]
+    },
+    {
+      "from": "mlp",
+      "to": "post-ffn-norm",
+      "label": "mlp(h)",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        820,
+        274
+      ]
+    },
+    {
+      "from": "post-ffn-norm",
+      "to": "ple-gate",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "post-ffn-norm",
+      "to": "ple-proj",
+      "label": "residual ⟂",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        940,
+        338
+      ]
+    },
+    {
+      "from": "ple-gate",
+      "to": "ple-proj",
+      "label": "gate · signal",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1120,
+        170
+      ]
+    },
+    {
+      "from": "ple-proj",
+      "to": "layer-scalar",
+      "label": "ple(h) + res",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        1120,
+        284
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Repeated ×20",
+      "items": [
+        "Each of the 20 decoder blocks is an identical residual layer",
+        "Block i consumes its own PLE slice [B,T,i,P] from the shared stack",
+        "Post-norm output is added to the residual before the next sub-block"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Producer / Consumer Roles",
+      "items": [
+        "Prefix layers 0–9 compute and persist full-length K/V states",
+        "Suffix layers 10–19 alias the last same-type producer's K/V",
+        "Shared-suffix MLP intermediate width doubles to 6144"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Numerics",
+      "items": [
+        "RMSNorm runs FP32 with a plain-multiplier scale weight",
+        "Gated GELU-Tanh MLP replaces plain GELU activation",
+        "The layer scalar is a unit buffer, not a trainable parameter"
+      ]
+    }
+  ]
+}

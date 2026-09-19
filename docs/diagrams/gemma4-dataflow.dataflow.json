@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Gemma-4-E2B-Lite · Data Pipeline",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "viewBox": [
+      1080,
+      620
+    ]
+  },
+  "stages": [
+    {
+      "label": "Sources"
+    },
+    {
+      "label": "Prepare"
+    },
+    {
+      "label": "Tokenize + Pack"
+    },
+    {
+      "label": "Store + Load"
+    },
+    {
+      "label": "Train"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "hf_sources",
+      "type": "external",
+      "label": "HuggingFace ×7",
+      "sublabel": "weighted mixture",
+      "tag": "8B tokens",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "download",
+      "type": "cloud",
+      "label": "download_raw",
+      "sublabel": "streaming JSONL",
+      "tag": "data/raw/",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "clean",
+      "type": "backend",
+      "label": "clean.py",
+      "sublabel": "quality + dedup",
+      "tag": "SHA-256",
+      "stage": 1,
+      "row": 2
+    },
+    {
+      "id": "tokenize",
+      "type": "backend",
+      "label": "tokenize.py",
+      "sublabel": "GPT-2 BPE uint32",
+      "tag": "vocab 50,257",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "pack",
+      "type": "backend",
+      "label": "pack_shards",
+      "sublabel": "round-robin mix",
+      "tag": "50M tok/shard",
+      "stage": 2,
+      "row": 1
+    },
+    {
+      "id": "shards",
+      "type": "database",
+      "label": "shard_*.bin",
+      "sublabel": "uint32 · EOS-sep",
+      "tag": "SHA-256 verified",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "loader",
+      "type": "messagebus",
+      "label": "ShardWindows",
+      "sublabel": "flat mmap windows",
+      "tag": "seeded loader",
+      "stage": 3,
+      "row": 1
+    },
+    {
+      "id": "manifest",
+      "type": "database",
+      "label": "manifest.json",
+      "sublabel": "provenance + mix",
+      "stage": 3,
+      "row": 3
+    },
+    {
+      "id": "pretrain",
+      "type": "backend",
+      "label": "training loop",
+      "sublabel": "token windows",
+      "tag": "labels = inputs",
+      "stage": 4,
+      "row": 1
+    }
+  ],
+  "flows": [
+    {
+      "from": "hf_sources",
+      "to": "download",
+      "label": "streaming JSONL",
+      "variant": "emphasis"
+    },
+    {
+      "from": "download",
+      "to": "clean",
+      "label": "raw JSONL",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "from": "clean",
+      "to": "tokenize",
+      "label": "deduped text"
+    },
+    {
+      "from": "tokenize",
+      "to": "pack",
+      "label": "uint32 streams",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "from": "pack",
+      "to": "shards",
+      "label": "packed shards",
+      "variant": "emphasis"
+    },
+    {
+      "from": "pack",
+      "to": "manifest",
+      "label": "provenance",
+      "variant": "dashed"
+    },
+    {
+      "from": "shards",
+      "to": "loader",
+      "label": "mmap windows",
+      "variant": "emphasis",
+      "route": "straight",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "from": "manifest",
+      "to": "loader",
+      "label": "manifest validation",
+      "variant": "security",
+      "route": "straight",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "from": "loader",
+      "to": "pretrain",
+      "label": "batches",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "One Pipeline, Five Consumers",
+      "items": [
+        "shared_data is the workspace library — projects never re-implement download, clean, or dedup",
+        "Canonical mixture: fineweb-edu 0.40, dclm 0.15, stack-py 0.15, openmath 0.10, arxiv 0.10, jupyter 0.05, cosmopedia 0.05"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Resumable + Verified",
+      "items": [
+        "All five stages are idempotent and resumable via per-stage state files",
+        "Shards are atomic, SHA-256-verified writes; manifest.json carries provenance and is validated before loading"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Zero-Copy Consumption",
+      "items": [
+        "Windows are flat seq_len slices — the causal-CE shift happens in training/losses.py",
+        "mmap reads never copy tokens; ShuffledRangeSampler is deterministic and resumable (seed 42)"
+      ]
+    }
+  ]
+}
