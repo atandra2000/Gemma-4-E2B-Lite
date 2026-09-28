@@ -73,12 +73,12 @@ Three mechanisms carry the design:
 
 ## 🗺️ Visual Architecture Atlas
 
-Four standalone Archify diagrams (dark/light themes, no server needed) with
-PNG renders alongside:
+Four standalone Archify diagrams (dark/light themes, no server needed).
+Three carry PNG renders; the System diagram's render is pending.
 
 | Diagram | What it shows | Interactive HTML | Visual preview |
 |---|---|:---:|:---:|
-| **System** | Component ownership: config contract → model → training → data → utils | [Open ↗](docs/diagrams/gemma4-system.html) | [PNG](docs/diagrams/gemma4-system.visual-check.1440x900.dark.png) |
+| **System** | Component ownership: config contract → model → training → data → utils | [Open ↗](docs/diagrams/gemma4-system.html) | PNG pending |
 | **Decoder block** | One layer's exact residual arithmetic incl. PLE injection and the layer scalar | [Open ↗](docs/diagrams/gemma4-block.html) | [PNG](docs/diagrams/gemma4-block.visual-check.1440x900.dark.png) |
 | **Training loop** | AdamW + warmup/cosine token schedule, accumulation, atomic resume | [Open ↗](docs/diagrams/gemma4-training-loop.html) | [PNG](docs/diagrams/gemma4-training-loop.visual-check.1440x900.dark.png) |
 | **Dataflow** | shared_data pipeline → manifest validation → memmapped windows → loss | [Open ↗](docs/diagrams/gemma4-dataflow.html) | [PNG](docs/diagrams/gemma4-dataflow.visual-check.1440x900.dark.png) |
@@ -250,7 +250,7 @@ reported as passed because an earlier one is:
 
 | Item | Status | Evidence |
 |---|---|---|
-| Test suite | ✅ **111 passed / 0 skipped, 39.15 s** (CPU, 2026-09-20) | `python3 -m pytest -q` |
+| Test suite | ✅ **115 passed / 0 skipped** (CPU, 2026-09-28) | `uv run pytest tests/ -q` |
 | Exact parameter count | ✅ 348,965,184, instantiated on meta device, reconciles the analytic ledger | `scripts/parameter_budget.py` |
 | Upstream oracle parity | ✅ logits, PLE signals, per-layer hidden states, loss, mapped grads @ atol 1e-5 / rtol 1e-4 | `tests/test_reference.py` (pinned `transformers==5.15.1`, SHA-256 verified at import) |
 | Eager ↔ SDPA backend parity + checkpoint grad parity | ✅ | `tests/test_backends.py` |
@@ -287,9 +287,16 @@ ls docs/diagrams/*.visual-check.html
 
 | doc | contents |
 |---|---|
+| [`docs/README.md`](docs/README.md) | **Nav map** — corpus table (measured, dated), learning paths, per-track tables, file→doc map |
+| [`docs/concepts/`](docs/concepts/) | Theory from first principles: PLE, local/global attention, proportional partial RoPE, cross-layer KV sharing |
+| [`docs/references/`](docs/references/) | Code-keyed walkthroughs: model package, cache & generation, training stack, data adapter |
+| [`docs/guides/`](docs/guides/) | learning-paths, quickstart, troubleshooting, glossary |
+| [`docs/training.md`](docs/training.md) | The applied training pipeline (loop, memory stack, persistence) |
+| [`docs/AUDIT.md`](docs/AUDIT.md) | Dated audit: verification runs, findings, from-scratch explanation, modification plan |
 | [`docs/sources.md`](docs/sources.md) | **Pinned source manifest** — upstream revisions, SHA-256 verification, oracle environment record |
 | [`docs/diagrams/`](docs/diagrams/) | System, decoder block, training-loop and dataflow diagrams (standalone HTML + dark/light PNGs) |
-| [`AGENTS.md`](AGENTS.md) | Coding-agent contract: source pins, implementation rules, completion-state discipline |
+| [`AGENTS.md`](AGENTS.md) | Coding-agent contract: source pins, implementation rules, completion-state discipline, doc-gate rules |
+| [`SKILLS.md`](SKILLS.md) | Measured developer workflows (tests, ledger, oracle, gates, smoke/resume) |
 | [Design specification](https://github.com/atandra2000/CoreProjects/blob/main/llm-research/DESIGN-gemma-4-e2b-lite.md) | The authoritative model contract (§2 sources, §3 configuration, §4 model, §5 recipe) |
 | [Execution plan](https://github.com/atandra2000/CoreProjects/blob/main/llm-research/EXECUTION-PLAN-gemma-4-e2b-lite.md) | Task order and acceptance gates (Tasks 1–13 across five phases) |
 

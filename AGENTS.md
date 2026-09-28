@@ -34,3 +34,19 @@ version. Any source disagreement is resolved before numerical-parity gates.
 - **Generation convention (pinned):** GPT-2 BPE, raw token IDs, no system or
   turn scaffolding, EOS 50,256 terminates. Identical in every ablation arm
   and evaluation script.
+
+## Documentation gates (hard rules)
+
+- **Both doc gates must pass before any change lands:**
+  `python3 scripts/check_docs.py --coverage --links` and
+  `python3 -m pytest tests/test_doc_refs.py` (collected by the default
+  `pytest` run — `pytest.ini` testpaths include it).
+- **Citation style:** every code reference in prose is `file.py:Symbol`;
+  line-number anchors fail the gate. Python snippets carry
+  `# illustrative` or `# verified`.
+- **Coverage:** every public symbol in `models/`, `training/`, `data/`,
+  `inference/`, `utils/`, `scripts/` must be cited in the docs. Renaming
+  or adding a public symbol means updating the docs in the same change.
+- **Doc truth:** headline numbers in docs carry a measured source;
+  estimates are tagged `[INFERENCE]`. The docs live under `docs/`
+  (nav map: `docs/README.md`; audit: `docs/AUDIT.md`).

@@ -25,5 +25,11 @@ wandb/
 .idea/
 *.swp
 
+# Local agent tooling state (regenerated; not source)
+.codegraph/
+.claude/autoharness/
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+
 # Temp
 *.tmp
