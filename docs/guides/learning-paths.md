@@ -9,7 +9,7 @@ file→doc table.
 
 | Step | Doc | What you will know after |
 |---|---|---|
-| 1 | [README](../../../README.md) | what Gemma-4-E2B-Lite is, its status discipline (CPU-correct, A100 pending, not trained) |
+| 1 | [README](../../README.md) | what Gemma-4-E2B-Lite is, its status discipline (CPU-correct, A100 pending, not trained) |
 | 2 | [guides/quickstart.md](quickstart.md) | run the test suite, build the model, reproduce the exact parameter count on your CPU |
 | 3 | [concepts/per-layer-embeddings.md](../concepts/per-layer-embeddings.md) | how token identity reaches every layer, and what the norms pin |
 | 4 | [concepts/local-global-attention.md](../concepts/local-global-attention.md) | why 16 layers look at 512 tokens and 4 look at everything |

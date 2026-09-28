@@ -16,6 +16,12 @@ import torch
 
 from data.dataset import ShardWindows, ShuffledRangeSampler, build_dataloader
 
+# The adapter reads through the workspace `shared_data` pipeline, which lives
+# beside this repo (../shared_data) and is not itself a git repo. CI clones
+# this repo alone, so the whole module is skipped there rather than failing.
+pytest.importorskip("shared_data", reason="requires workspace shared_data package")
+
+
 SEQ = 16
 VOCAB, EOS = 50_257, 50_256
 

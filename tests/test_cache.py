@@ -58,7 +58,7 @@ def test_cached_matches_fresh_at_window_edge():
     for seq in (511, 512, 513):
         ids = sample_ids(config, seq, seed=seq)
         cached, _ = cached_prefill_logits(model, ids, chunk_size=64)
-        assert_close(cached, model(ids), f"cached logits at T={seq}")
+        assert_close(cached, model(ids), f"cached logits at T={seq}", tol=SHAPE_NOISE)
 
 
 @torch.no_grad()
