@@ -301,9 +301,8 @@ ls docs/diagrams/*.visual-check.html
 | [Execution plan](https://github.com/atandra2000/CoreProjects/blob/main/llm-research/EXECUTION-PLAN-gemma-4-e2b-lite.md) | Task order and acceptance gates (Tasks 1–13 across five phases) |
 
 > The design and execution-plan docs live one level above this repo in the
-> `CoreProjects` workspace (`llm-research/`); locally the relative links are
-> [`../../llm-research/DESIGN-gemma-4-e2b-lite.md`](../../llm-research/DESIGN-gemma-4-e2b-lite.md)
-> and [`../../llm-research/EXECUTION-PLAN-gemma-4-e2b-lite.md`](../../llm-research/EXECUTION-PLAN-gemma-4-e2b-lite.md).
+> `CoreProjects` workspace (`llm-research/`), so they are not part of this
+> repository. Use the workspace links in the table above.
 
 ### Pinned upstream sources (verified in `docs/sources.md`)
 
