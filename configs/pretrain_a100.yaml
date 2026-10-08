@@ -48,4 +48,5 @@ data:
   # Placeholder until Task 9 wires the shared pipeline; production must fail
   # on absent/mismatched data.
   source: shared_workspace_corpus
+  data_root: data/pretrain_chinchilla   # same shared shards as the other Lites
   manifest: null

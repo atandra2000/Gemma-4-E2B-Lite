@@ -57,7 +57,9 @@ class Block(nn.Module):
         self.mlp = GatedGeluMlp(config, layer_idx)
         self.ple_gate = nn.Linear(dim, config.ple_dim, bias=False)
         self.ple_proj = nn.Linear(config.ple_dim, dim, bias=False)
-        self.layer_scalar = nn.Buffer(torch.ones(1))
+        # nn.Buffer is torch 2.5+. register_buffer does the same job and
+        # works on 2.4, where nn.Buffer raises AttributeError.
+        self.register_buffer("layer_scalar", torch.ones(1))
         self.attention = Attention(config, layer_idx)
         self.gradient_checkpointing = False
 
@@ -73,7 +75,7 @@ class Block(nn.Module):
         seq_len = hidden_states.shape[1]
         if position_ids is None:
             start = shared_kv_states.num_tokens if isinstance(shared_kv_states, ProducerKVCache) else 0
-            position_ids = torch.arange(start, start + seq_len).unsqueeze(0).expand(hidden_states.shape[0], -1)
+            position_ids = torch.arange(start, start + seq_len, device=hidden_states.device).unsqueeze(0).expand(hidden_states.shape[0], -1)
         if shared_kv_states is None:
             shared_kv_states = {}
         if isinstance(shared_kv_states, ProducerKVCache):
@@ -84,7 +86,7 @@ class Block(nn.Module):
             )
         elif attention_mask is None and self.attention is not None:
             window = self.attention.local_window
-            attention_mask = causal_mask(seq_len, window)
+            attention_mask = causal_mask(seq_len, window).to(hidden_states.device)
 
         if self.attention is not None:
             residual = hidden_states
