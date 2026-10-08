@@ -8,6 +8,7 @@ complete generation.
 """
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -60,6 +61,13 @@ class CheckpointManager:
         self._atomic_json(gen_dir / "meta.json", meta)
 
         self._atomic_json(self.save_dir / "pointer.json", {"generation": gen_dir.name})
+
+        # Bound disk use: only the committed generation and its predecessor
+        # are kept. Unpruned gen_* directories filled a 100 GB volume in 25
+        # saves; a run that cannot free old generations cannot reach 1B tokens.
+        gens = sorted(self.save_dir.glob("gen_*"))
+        for stale in gens[:-2]:
+            shutil.rmtree(stale, ignore_errors=True)
         return gen_dir
 
     # -- load ----------------------------------------------------------------

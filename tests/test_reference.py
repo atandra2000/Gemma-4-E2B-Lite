@@ -19,6 +19,26 @@ from torch.nn import functional as F
 from models.config import ModelConfig, tiny_config
 from models.transformer import Gemma4LiteModel
 
+# The upstream oracle is `transformers`' Gemma4ForCausalLM. transformers
+# only enables its PyTorch backend on torch >= 2.5, and a cu130 torch will
+# not start on a 12.4 driver. Where that stack is not available the parity
+# suite cannot run at all, so skip it rather than fail on an ImportError.
+import transformers as _transformers
+
+_upstream_ok = False
+if getattr(_transformers, "is_torch_available", lambda: False)():
+    try:
+        importlib.import_module("transformers.models.gemma4")
+        _upstream_ok = True
+    except Exception:
+        _upstream_ok = False
+
+pytestmark = pytest.mark.skipif(
+    not _upstream_ok,
+    reason="upstream Gemma4ForCausalLM needs transformers with PyTorch "
+           "(torch>=2.5). This environment has torch 2.4 on driver 12.4.",
+)
+
 transformers = pytest.importorskip("transformers", reason="oracle extra (test-only)")
 
 TORLERANCE = dict(atol=1e-5, rtol=1e-4)

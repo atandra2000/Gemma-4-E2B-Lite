@@ -25,6 +25,21 @@ from models.config import ModelConfig
 from models.transformer import Gemma4LiteModel
 from training.losses import chunked_causal_ce
 from utils.checkpoint import CheckpointManager
+# --- bakeoff exposure accounting (tools/bakeoff) ---
+import sys as _sys
+from pathlib import Path as _Path
+_BAKEOFF = _Path(__file__).resolve().parents[2] / "tools" / "bakeoff"
+if _BAKEOFF.is_dir() and str(_BAKEOFF) not in _sys.path:
+    _sys.path.insert(0, str(_BAKEOFF))
+try:
+    from exposure_hook import load_exposure as _load_exposure
+    from exposure_hook import bind as _bind_exp, tick as _tick_exp
+except Exception:
+    _load_exposure = None
+    _bind_exp = None
+    def _tick_exp(*a, **k):
+        pass
+# --- end bakeoff import ---
 
 IGNORE_ID = -100
 
@@ -33,7 +48,7 @@ def lr_at(step: int, *, total_steps: int, warmup_fraction: float,
           lr: float, lr_final_fraction: float) -> float:
     """Linear warmup then cosine to lr_final_fraction * lr (token-schedule
     semantics: step = optimizer steps, each covering accumulation_tokens)."""
-    warmup = max(1, int(total_steps * warmup_fraction))
+    warmup = max(1, math.ceil(total_steps * warmup_fraction))
     if step < warmup:
         return lr * (step + 1) / warmup  # (step+1): the first step trains
     progress = (step - warmup) / max(1, total_steps - warmup)
@@ -77,17 +92,21 @@ def train(cfg: dict, batches, *, model: Gemma4LiteModel | None = None,
     restores model/optimizer/RNG/data position from the latest complete one.
     """
     t = cfg["training"]
+    # Train on the GPU when one is present. The recipe is unchanged; only the
+    # placement follows the hardware (this trainer used to hard-code CPU).
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if model is None:
         # Deterministic init: identical configs must build identical models,
         # otherwise interrupted/resumed runs diverge from the first step.
         torch.manual_seed(int(t.get("seed", 42)))
         model = Gemma4LiteModel(ModelConfig.from_dict(cfg["model"]))
+    model = model.to(device)
     optimizer = build_optimizer(model, t)
     manager = CheckpointManager(checkpoint_dir) if checkpoint_dir else None
 
     step, tokens_seen, batches_consumed = 0, 0, 0
     if resume and manager is not None:
-        meta = manager.load(model, optimizer, device="cpu",
+        meta = manager.load(model, optimizer, device=str(device),
                             expect_config_hash=t.get("config_hash"))
         restore_rng(meta["rng_states"])
         step, tokens_seen, batches_consumed = (
@@ -96,6 +115,23 @@ def train(cfg: dict, batches, *, model: Gemma4LiteModel | None = None,
               f"{batches_consumed} batches)")
 
     accum_tokens = t["accumulation_tokens"]
+    # bakeoff exposure. The meter needs one micro-batch shape whose product
+    # equals the token-based update: micro x seq x accum = accumulation_tokens.
+    # Production shapes factor exactly; toy test configs may not, and then the
+    # optional accounting is skipped rather than miscounted.
+    micro_bs = int(t["microbatch_sizes"][0])
+    seq_len = int(t["seq_len"])
+    accum = accum_tokens // (micro_bs * seq_len)
+    if _load_exposure is not None and accum * micro_bs * seq_len == accum_tokens:
+        _bind_exp(_load_exposure(__file__, tokens_per_step=accum_tokens,
+            micro_batch=micro_bs, seq_len=seq_len, grad_accum=accum,
+            tokenizer="gpt2",
+            run_dir=str(checkpoint_dir or t.get("checkpoint_dir", "checkpoints")) + "/exposure",
+            start_tokens_seen=tokens_seen,
+            start_opt_steps=tokens_seen // accum_tokens))
+    elif _load_exposure is not None:
+        print(f"[exposure] skipped: accumulation_tokens={accum_tokens} does not "
+              f"factor as micro {micro_bs} x seq {seq_len} x accum")
     total_tokens = t["total_tokens"]
     total_steps = math.ceil(total_tokens / accum_tokens)
     loss_chunk = t.get("loss_chunk_tokens", 4096)
@@ -146,6 +182,8 @@ def train(cfg: dict, batches, *, model: Gemma4LiteModel | None = None,
             ids, labels = next(it)
         except StopIteration:
             break
+        ids = ids.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
         batches_consumed += 1
         loss = chunked_causal_ce(model.forward_hidden(ids), weight, labels,
                                  model.config.logit_softcap, chunk_size=loss_chunk)
@@ -156,6 +194,7 @@ def train(cfg: dict, batches, *, model: Gemma4LiteModel | None = None,
         tokens_seen += ids.numel()
         if window_valid >= accum_tokens:
             finalize_window(window_valid, window_loss_sum)
+            _tick_exp()   # bakeoff exposure: one complete optimizer step
             logged_loss = window_loss_sum / window_valid
             window_valid, window_loss_sum = 0, 0.0
             if manager is not None:

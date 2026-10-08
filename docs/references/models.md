@@ -132,7 +132,8 @@ no biases, width from `ModelConfig.mlp_hidden` (3,072 / 6,144).
 `models/transformer.py:Block` — five norms (`input_norm`,
 `post_attention_norm`, `pre_ffn_norm`, `post_ffn_norm`, `post_ple_norm`),
 `models/transformer.py:Block.ple_gate`/`.ple_proj` (D→P, P→D),
-`models/transformer.py:Block.layer_scalar` (unit **buffer**, not a
+the `layer_scalar` buffer registered in `models/transformer.py:Block`
+(unit **buffer**, not a
 parameter — present so a future learned scalar needs no surgery), and the
 residual arithmetic in pinned order: attention → post-norm → add;
 FFN → post-norm → add; gated PLE injection → post-norm → add; × layer
